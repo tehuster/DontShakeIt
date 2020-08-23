@@ -3,6 +3,11 @@
 #include <esp_now.h>
 #include <WiFi.h>
 
+const int servo_pin = 26;
+int freq = 50;
+int ledChannel = 0;
+int resolution = 10;
+
 // uint8_t Address[] = {0x50, 0x02, 0x91, 0x8D, 0x21, 0x14}; //HAS GREEN MARK
 uint8_t Address[] = {0x50, 0x02, 0x91, 0x8D, 0xD9, 0x60};
 
@@ -15,6 +20,12 @@ typedef struct struct_message {
 float x;
 float y;
 float z;
+
+float xPrevious;
+float yPrevious;
+float zPrevious;
+
+float shakeTresshold = 0.5;
 
 float incomingX;
 float incomingY;
@@ -47,6 +58,7 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   incomingZ = rx_message.z;
 }
 
+bool isTilted();
 void updateDisplay();
 
 void setup(void) {
@@ -55,6 +67,10 @@ void setup(void) {
   M5.begin();
   M5.IMU.Init();
   M5.Lcd.setRotation(0);
+
+  ledcSetup(ledChannel, freq, resolution);
+  ledcAttachPin(servo_pin, ledChannel);
+  ledcWrite(ledChannel, 256);//0°
 
   WiFi.mode(WIFI_STA);
   if (esp_now_init() != ESP_OK) {
@@ -77,25 +93,72 @@ void setup(void) {
  
 }
 
+bool noTilt;
+
 void loop() {
-  M5.IMU.getAccelData(&x,&y,&z);
 
-  tx_message.x = x;
-  tx_message.y = y;
-  tx_message.z = z;
+  if(isTilted())
+  { 
+     M5.Lcd.fillScreen(TFT_RED);
+      M5.Lcd.setCursor(5, 5, 2);
+      M5.Lcd.setTextColor(TFT_WHITE); 
+      M5.Lcd.println("OOOH SHIT!");
+      noTilt = true;
+      ledcWriteTone(ledChannel, 400);
+      delay(250);
+      ledcWriteTone(ledChannel, 300);
+      delay(250);
+      ledcWriteTone(ledChannel, 200);
+      delay(250);
+      ledcWriteTone(ledChannel, 100);
+      delay(500);
+      ledcWriteTone(ledChannel, 0);  
+      delay(500);   
+  }
+  else if(noTilt)
+  {
+      M5.Lcd.fillScreen(TFT_DARKGREY);
+      M5.Lcd.setCursor(5, 5, 2);
+      M5.Lcd.setTextColor(TFT_ORANGE); 
+      M5.Lcd.println("SHAKE IT!");
+      noTilt = false; 
+  }
+  
 
-  esp_err_t result = esp_now_send(Address, (uint8_t *) &tx_message, sizeof(tx_message));
+  // esp_err_t result = esp_now_send(Address, (uint8_t *) &tx_message, sizeof(tx_message));
    
-  if (result == ESP_OK) {
-    Serial.println("Sent with success");
-  }
-  else {
-    Serial.println("Error sending the data");
-  }
+  // if (result == ESP_OK) {
+  //   Serial.println("Sent with success");
+  // }
+  // else {
+  //   Serial.println("Error sending the data");
+  // }
 
-  updateDisplay();
+  // updateDisplay();
 
-  delay(25);
+  // delay(100);
+
+ 
+}
+
+bool isTilted()
+{
+    M5.IMU.getAccelData(&x,&y,&z);
+    float xDelta = abs(x - xPrevious);
+    float yDelta = abs(y - yPrevious);
+    float zDelta = abs(z - zPrevious);
+    xPrevious = x;
+    yPrevious = y;
+    zPrevious = z;
+
+    if(xDelta > shakeTresshold || yDelta > shakeTresshold || zDelta > shakeTresshold)
+    {
+        return true;
+    }
+    else
+    {
+       return false;
+    }     
 }
 
 void updateDisplay()
@@ -103,9 +166,5 @@ void updateDisplay()
   M5.Lcd.fillScreen(TFT_DARKGREY);
   M5.Lcd.setCursor(5, 5, 2);
   M5.Lcd.setTextColor(TFT_ORANGE); 
-  M5.Lcd.println("SHAKE IT!"); 
-  M5.Lcd.setCursor(0, 25, 4);
-  M5.Lcd.println(incomingX);
-  M5.Lcd.println(incomingY);
-  M5.Lcd.println(incomingZ);
+  M5.Lcd.println("SHAKE IT!");
 }
